@@ -127,10 +127,9 @@ export default function App() {
     let currentActualPath = [startPoint];
 
     flightIntervalRef.current = setInterval(() => {
-      // *** FIX: Stop the simulation if the last waypoint is reached ***
       if (waypointIndex >= predictedPath.length) {
         clearInterval(flightIntervalRef.current);
-        return; // Exit the interval callback
+        return;
       }
 
       setDroneData(prevData => {
@@ -141,13 +140,11 @@ export default function App() {
         const dy = targetPos.lat - currentPos.lat;
         const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
 
-        // Check if drone has reached the current target waypoint
         if (distanceToTarget < 0.00006) {
-          waypointIndex++; // Move to the next waypoint
+          waypointIndex++;
           currentActualPath = [...currentActualPath, [targetPos.lat, targetPos.lon]];
           setActualPath(currentActualPath);
           
-          // If that was the last waypoint, clear the interval
           if (waypointIndex >= predictedPath.length) {
             clearInterval(flightIntervalRef.current);
           }
@@ -155,7 +152,6 @@ export default function App() {
           return { ...prevData, currentLat: targetPos.lat, currentLon: targetPos.lon };
         }
 
-        // Move drone towards the target
         const stepSize = 0.00005;
         const newLat = currentPos.lat + (dy / distanceToTarget) * stepSize;
         const newLon = currentPos.lon + (dx / distanceToTarget) * stepSize;
@@ -174,7 +170,6 @@ export default function App() {
       });
     }, 500);
 
-    // Cleanup function to stop everything when component unmounts
     return () => {
       clearInterval(flightIntervalRef.current);
       if (stream) {
@@ -183,7 +178,6 @@ export default function App() {
     };
   }, [startPoint, predictedPath]);
 
-  // Effect to handle video stream in modal
   useEffect(() => {
     if (isVideoExpanded && videoRef.current && videoRef.current.srcObject) {
       if (modalVideoRef.current) {
@@ -194,15 +188,30 @@ export default function App() {
 
 
   // --- Event Handlers ---
-  const handleGenerateJson = () => { /* ... (unchanged) ... */ };
-  const handleCopyJson = () => { /* ... (unchanged) ... */ };
+  const handleGenerateJson = () => {
+    setJsonData(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      position: { latitude: droneData.currentLat.toFixed(6), longitude: droneData.currentLon.toFixed(6), altitude_meters: droneData.altitude },
+      telemetry: { battery_percent: Math.round(droneData.battery), signal_strength_percent: droneData.signal, speed_kmh: droneData.speed, heading: droneData.heading },
+      video_feed: { status: droneData.videoStatus, detected_object: droneData.objectDetected },
+      flight_plan: { waypoints: predictedPath, total_distance_km: (pathData.totalDistance / 1000).toFixed(2) }
+    }, null, 2));
+  };
+
+  const handleCopyJson = () => {
+    if (jsonData) {
+      navigator.clipboard.writeText(jsonData);
+      setCopyStatusText('Copied!');
+      setTimeout(() => setCopyStatusText('Copy'), 2000);
+    }
+  };
   const currentPosition = [droneData.currentLat, droneData.currentLon];
 
   return (
     <div className="h-screen w-screen bg-gray-100 text-gray-800 font-sans flex flex-col overflow-hidden">
       {/* HEADER */}
       <header className="bg-white shadow-md p-3 flex justify-between items-center flex-shrink-0 z-20">
-        <h1 className="text-xl font-bold text-green-800">AURA DRONE CONTROL</h1>
+        <h1 className="text-xl font-bold text-green-800">QUATUM DRONE CONTROL</h1>
         <div className="flex items-center gap-6">
           <div className="indicator">Battery: <BatteryIcon level={Math.round(droneData.battery)} /></div>
           <div className="indicator">Signal: <SignalIcon strength={droneData.signal} /></div>
@@ -256,19 +265,25 @@ export default function App() {
         {/* Side Panels */}
         <div className="flex flex-col gap-4 overflow-y-auto">
             {/* Live Feed Panel */}
-            <div className="panel bg-black rounded-lg shadow-lg flex flex-col text-white overflow-hidden">
-                 <div className="panel-header absolute top-0 left-0 right-0 p-3 flex justify-between items-center z-10 bg-gradient-to-b from-black/50 to-transparent text-white">
-                    <h2 className="text-lg font-bold" style={{textShadow: '1px 1px 3px #000'}}>Live Feed & Tracking</h2>
-                    <div className="flex items-center gap-2">
-                        {droneData.isLive && <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>}
-                        <span className={`font-bold ${droneData.isLive ? 'text-green-400' : 'text-yellow-400'}`} style={{textShadow: '1px 1px 3px #000'}}>{droneData.videoStatus}</span>
-                    </div>
-                </div>
-                <div className="panel-content flex-grow flex items-center justify-center relative">
+            <div className="panel bg-black rounded-lg shadow-lg flex flex-col text-white overflow-hidden relative">
+                <div className="panel-content flex-grow flex items-center justify-center">
                     <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-contain"></video>
-                    <div className="absolute inset-0 bg-black opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer" onClick={() => setIsVideoExpanded(true)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 0h-4m4 0l-5-5" /></svg>
+                    
+                    {/* Floating Status Indicator */}
+                    <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                        {droneData.isLive && (
+                            <>
+                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                                <span className="font-bold text-white" style={{textShadow: '1px 1px 3px #000'}}>Connected</span>
+                            </>
+                        )}
                     </div>
+
+                    {/* Hover Overlay for expanding */}
+                    <div className="absolute inset-0 bg-black opacity-0 hover:opacity-60 transition-opacity flex items-center justify-center cursor-pointer" onClick={() => setIsVideoExpanded(true)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m7-5h4m0 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m7 5h4m0 0v4m0-4l-5 5" /></svg>
+                    </div>
+
                     <div className="absolute bottom-2 left-2 text-xs font-mono bg-black bg-opacity-50 p-1 rounded">
                         <p>GPS: {droneData.currentLat.toFixed(4)}, {droneData.currentLon.toFixed(4)}</p>
                         <p>Detection: {droneData.objectDetected}</p>
